@@ -1,0 +1,51 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:asyncImageLoader="clr-namespace:AsyncImageLoader;assembly=AsyncImageLoader.Avalonia"
+             xmlns:services="clr-namespace:AsyncImageLoader.Avalonia.Demo.Services"
+             x:Class="AsyncImageLoader.Avalonia.Demo.Pages.AdvancedImageSafeMemoryPage">
+
+    <ScrollViewer>
+        <ItemsControl >
+          
+          <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Spacing="50" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+          
+            <ItemsControl.Items>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat0.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat1.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat2.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat3.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat4.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat5.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat6.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat7.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat0.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat1.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat2.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat3.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat4.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat5.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat6.jpg</x:String>
+                <x:String>https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/raw/master/AsyncImageLoader.Avalonia.Demo/Assets/cat7.jpg</x:String>
+                
+            </ItemsControl.Items>
+
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <asyncImageLoader:AdvancedImage 
+                        Source="{Binding .}" 
+                        Height="200"
+                        Margin="4"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          
+          
+          </ItemsControl>
+            
+            
+          
+    </ScrollViewer>
+</UserControl>

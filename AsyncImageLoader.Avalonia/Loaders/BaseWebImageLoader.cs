@@ -62,6 +62,7 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
     /// <returns>Bitmap</returns>
     protected virtual async Task<Bitmap?> LoadAsync(string url, IStorageProvider? storageProvider) {
         var fromLocal = await LoadFromLocalAsync(url, storageProvider).ConfigureAwait(false);
+        
         if (fromLocal != null) return fromLocal;
         return await LoadAsync(url).ConfigureAwait(false);
     }
@@ -85,6 +86,7 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
             using var memoryStream = new MemoryStream(externalBytes);
             var bitmap = new Bitmap(memoryStream);
             await SaveToGlobalCache(url, externalBytes).ConfigureAwait(false);
+            
             return bitmap;
         }
         catch (Exception e) {
@@ -104,7 +106,11 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
             return new Bitmap(url);
 
         if (storageProvider is null) return null;
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("file" or "content")) return null;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) {
+            if (uri.Scheme != "file" && uri.Scheme != "content") {
+                return null;
+            }
+        } 
 
         try {
             var fileInfo = await storageProvider.TryGetFileFromPathAsync(uri);
@@ -172,6 +178,7 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
     /// <returns>Bitmap</returns>
     protected virtual Task<Bitmap?> LoadFromGlobalCache(string url) {
         // Current implementation does not provide global caching
+        
         return Task.FromResult<Bitmap?>(null);
     }
 
@@ -183,6 +190,7 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
     /// <returns>Bitmap</returns>
     protected virtual Task SaveToGlobalCache(string url, byte[] imageBytes) {
         // Current implementation does not provide global caching
+        
         return Task.CompletedTask;
     }
 

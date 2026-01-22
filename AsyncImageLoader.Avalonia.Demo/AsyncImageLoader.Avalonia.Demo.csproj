@@ -25,4 +25,7 @@
     <EmbeddedResource Include="Assets/cat6.jpg" />
     <EmbeddedResource Include="Assets/cat7.jpg" />
   </ItemGroup>
+  <ItemGroup>
+    <Folder Include="ViewModels\Pages\" />
+  </ItemGroup>
 </Project>
