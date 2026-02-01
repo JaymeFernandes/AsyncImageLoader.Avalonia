@@ -24,6 +24,13 @@ public class AdvancedImage : ContentControl {
     public static readonly StyledProperty<string?> SourceProperty =
         AvaloniaProperty.Register<AdvancedImage, string?>(nameof(Source));
 
+
+    /// <summary>
+    ///     Defines the <see cref="FallbackImage" /> property.
+    /// </summary>
+    public static readonly StyledProperty<Bitmap?> FallbackImageProperty =
+        AvaloniaProperty.Register<AdvancedImage, Bitmap?>(nameof(FallbackImage));
+
     /// <summary>
     ///     Defines the <see cref="ShouldLoaderChangeTriggerUpdate" /> property.
     /// </summary>
@@ -116,6 +123,13 @@ public class AdvancedImage : ContentControl {
     }
 
     /// <summary>
+    ///     Gets or sets the Bitmap for Fallback image that will be displayed if the Source image isn't loaded.
+    /// </summary>
+    public Bitmap? FallbackImage {
+        get => GetValue(FallbackImageProperty);
+        set => SetValue(FallbackImageProperty, value);
+    }
+    /// <summary>
     ///     Gets or sets the value controlling whether the image should be reloaded after changing the loader.
     /// </summary>
     public bool ShouldLoaderChangeTriggerUpdate {
@@ -164,7 +178,10 @@ public class AdvancedImage : ContentControl {
             ClearSourceIfUserProvideImage();
         else if (change.Property == CornerRadiusProperty)
             UpdateCornerRadius(change.GetNewValue<CornerRadius>());
-        else if (change.Property == BoundsProperty && CornerRadius != default) UpdateCornerRadius(CornerRadius);
+        else if (change.Property == BoundsProperty && CornerRadius != default)
+            UpdateCornerRadius(CornerRadius);
+        else if (change.Property == FallbackImageProperty && Source == null)
+            UpdateImage(null, null);
         base.OnPropertyChanged(change);
     }
 
@@ -186,6 +203,10 @@ public class AdvancedImage : ContentControl {
         catch (ObjectDisposedException) {
         }
 
+        if (source is null && FallbackImage != null) {
+            CurrentImage =  FallbackImage;
+        }
+
         if (source is null && CurrentImage is not ImageWrapper) {
             // User provided image himself
             return;
@@ -193,7 +214,6 @@ public class AdvancedImage : ContentControl {
 
         IsLoading = true;
         CurrentImage = null;
-
 
         var bitmap = await Task.Run(async () => {
             try {
@@ -238,6 +258,7 @@ public class AdvancedImage : ContentControl {
 
         if (cancellationTokenSource.IsCancellationRequested)
             return;
+
         CurrentImage = bitmap is null ? null : new ImageWrapper(bitmap);
         IsLoading = false;
     }
