@@ -175,6 +175,7 @@ public partial class AdvancedImage : ContentControl {
         else if (change.Property == CornerRadiusProperty)
             UpdateCornerRadius(change.GetNewValue<CornerRadius>());
         else if (change.Property == BoundsProperty && CornerRadius != default) UpdateCornerRadius(CornerRadius);
+        
         base.OnPropertyChanged(change);
     }
 
@@ -204,7 +205,8 @@ public partial class AdvancedImage : ContentControl {
         IImage? bitmap = null;
 
         try {
-            bitmap = await LoadImageInternalAsync(source, loader, cts.Token);
+            bitmap = await Task.Run(async () => 
+                await LoadImageInternalAsync(source, loader, cts.Token));
         }
         catch (TaskCanceledException)
         {
@@ -341,6 +343,8 @@ public partial class AdvancedImage : ContentControl {
         if (ImageLoader.EnableAutoCacheCleanup && !_isCompleted) {
             var cts = new CancellationTokenSource();
             var oldCts = Interlocked.Exchange(ref _loadCancellationTokenSource, cts);
+
+            await Task.Delay(10);
 
             try
             {
