@@ -5,11 +5,14 @@
              x:Class="AsyncImageLoader.Avalonia.Demo.Pages.AdvancedImageSafeMemoryPage">
 
     <ScrollViewer>
-        <ItemsControl >
+      <StackPanel>
+        <TextBlock Text="Example demonstrating image rendering under extreme load conditions."/>
+      
+      <ItemsControl >
           
           <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
-                    <StackPanel Spacing="50" />
+                    <VirtualizingStackPanel />
                 </ItemsPanelTemplate>
             </ItemsControl.ItemsPanel>
           
@@ -41,11 +44,8 @@
                         Margin="4"/>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>
-          
-          
           </ItemsControl>
-            
-            
-          
+    
+      </StackPanel>
     </ScrollViewer>
 </UserControl>

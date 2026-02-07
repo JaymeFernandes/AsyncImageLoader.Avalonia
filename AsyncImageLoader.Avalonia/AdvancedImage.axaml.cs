@@ -12,13 +12,12 @@ using Avalonia.Threading;
 
 namespace AsyncImageLoader;
 
-public class AdvancedImage : ContentControl {
+public partial class AdvancedImage : ContentControl {
     /// <summary>
     ///     Defines the <see cref="Loader" /> property.
     /// </summary>
     public static readonly StyledProperty<IAsyncImageLoader?> LoaderProperty =
         AvaloniaProperty.Register<AdvancedImage, IAsyncImageLoader?>(nameof(Loader));
-    
 
     /// <summary>
     ///     Defines the <see cref="Source" /> property.
@@ -64,6 +63,8 @@ public class AdvancedImage : ContentControl {
     public static readonly StyledProperty<StretchDirection> StretchDirectionProperty =
         Image.StretchDirectionProperty.AddOwner<AdvancedImage>();
 
+   
+    
     private readonly Uri? _baseUri;
 
     private RoundedRect _cornerRadiusClip;
@@ -74,17 +75,13 @@ public class AdvancedImage : ContentControl {
     private bool _isLoading;
 
     private bool _shouldLoaderChangeTriggerUpdate;
-    
-    //private static readonly SemaphoreSlim _imageLoadSemaphore = new(1, 10); 
-    
-    private CancellationTokenSource? _loadCancellationTokenSource 
-        = new CancellationTokenSource();
-
-    private bool _isCompleted = false;
-
 
     private CancellationTokenSource? _updateCancellationToken;
     private readonly ParametrizedLogger? _logger;
+    
+    private CancellationTokenSource? _loadCancellationTokenSource = new CancellationTokenSource();
+    private bool _isAttachedToVisualTree = false;
+    private bool _isCompleted = false;
 
     static AdvancedImage() {
         AffectsRender<AdvancedImage>(CurrentImageProperty, StretchProperty, StretchDirectionProperty,
@@ -148,9 +145,6 @@ public class AdvancedImage : ContentControl {
         get => _currentImage;
         set
         {
-            if (_currentImage is ImageWrapper old)
-                old.Dispose();
-
             SetAndRaise(CurrentImageProperty, ref _currentImage, value);
         }
     }
@@ -173,9 +167,9 @@ public class AdvancedImage : ContentControl {
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change) {
         if (change.Property == SourceProperty)
-            UpdateImage(change.GetNewValue<string>(), Loader);
+            _ = UpdateImage(change.GetNewValue<string>(), Loader);
         else if (change.Property == LoaderProperty && ShouldLoaderChangeTriggerUpdate)
-            UpdateImage(change.GetNewValue<string>(), Loader);
+            _ = UpdateImage(change.GetNewValue<string>(), Loader);
         else if (change.Property == CurrentImageProperty)
             ClearSourceIfUserProvideImage();
         else if (change.Property == CornerRadiusProperty)
@@ -199,7 +193,6 @@ public class AdvancedImage : ContentControl {
         try
         {
             oldCts?.Cancel();
-            oldCts?.Dispose();
         }
         catch (ObjectDisposedException) { }
 
@@ -215,13 +208,15 @@ public class AdvancedImage : ContentControl {
         }
         catch (TaskCanceledException)
         {
-            if (bitmap is Bitmap bmp) bmp.Dispose();
+            if (bitmap is Bitmap bmp) 
+                bmp.Dispose();
             return;
         }
         catch (Exception e)
         {
             _logger?.Log(this, "AdvancedImage image resolution failed: {0}", e);
-            if (bitmap is Bitmap bmp) bmp.Dispose();
+            if (bitmap is Bitmap bmp) 
+                bmp.Dispose();
             return;
         }
         finally
@@ -251,16 +246,17 @@ public class AdvancedImage : ContentControl {
     {
         token.ThrowIfCancellationRequested();
 
-        await Task.Delay(10, token);
-
         try
         {
             var uri = new Uri(source, UriKind.RelativeOrAbsolute);
+            
+            using var stream = AssetLoader.Open(uri, _baseUri);
+            
             if (AssetLoader.Exists(uri, _baseUri))
-                return new Bitmap(AssetLoader.Open(uri, _baseUri));
+                return new Bitmap(stream);
         }
         catch { }
-
+            
         loader ??= ImageLoader.AsyncImageLoader;
 
         if (loader is IAdvancedAsyncImageLoader advanced)
@@ -316,21 +312,31 @@ public class AdvancedImage : ContentControl {
             : base.MeasureOverride(availableSize);
     }
 
-    /// <inheritdoc />
     protected override Size ArrangeOverride(Size finalSize) {
         return CurrentImage != null
             ? Stretch.CalculateSize(finalSize, CurrentImage.Size)
             : base.ArrangeOverride(finalSize);
     }
     
-    protected override async void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
-    {
-        
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e) {
+        _isAttachedToVisualTree = true;
         base.OnAttachedToVisualTree(e);
 
-        _ = Dispatcher.UIThread.InvokeAsync(HandleAttachedAsync);
+        if (!_isCompleted) {
+            _ = Dispatcher.UIThread.InvokeAsync(HandleAttachedAsync);
+        }
+            
     }
 
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e) {
+        _isAttachedToVisualTree = false;
+        
+        base.OnDetachedFromVisualTree(e);
+        
+        if (ImageLoader.EnableAutoCacheCleanup)
+            ScheduleDispose();
+    }
+    
     private async Task HandleAttachedAsync() {
         if (ImageLoader.EnableAutoCacheCleanup && !_isCompleted) {
             var cts = new CancellationTokenSource();
@@ -347,27 +353,34 @@ public class AdvancedImage : ContentControl {
                 await UpdateImage(Source, Loader);
         }
     }
+    
+    private void ScheduleDispose()
+    {
+        if (CurrentImage is not ImageWrapper wrapper || !_isCompleted || _isAttachedToVisualTree)
+            return;
 
-    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e) {
-        
-        base.OnDetachedFromVisualTree(e);
-        
-        _isCompleted = false;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(2000, _loadCancellationTokenSource!.Token);
 
-        if (ImageLoader.EnableAutoCacheCleanup) {
-            var oldCts = Interlocked.Exchange(
-                ref _loadCancellationTokenSource,
-                new CancellationTokenSource()
-            );
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (!_isAttachedToVisualTree)
+                    {
+                        _isCompleted = false;
+                        
+                        if (CurrentImage is ImageWrapper w)
+                            w.Dispose();
 
-            oldCts?.Cancel();
-            oldCts?.Dispose();
+                        CurrentImage = null;
+                    }
+                });
+            }
+            catch (TaskCanceledException) { }
             
-            if (CurrentImage is ImageWrapper wrapper)
-                wrapper.Dispose();
-            
-            CurrentImage = null;
-        }
+        }, _loadCancellationTokenSource!.Token);
     }
 
 
@@ -388,10 +401,6 @@ public class AdvancedImage : ContentControl {
 
         public Size Size => ImageImplementation.Size;
 
-        ~ImageWrapper() {
-            Dispose();
-        }
-
         public void Dispose()
         {
             if (_disposed)
@@ -401,8 +410,6 @@ public class AdvancedImage : ContentControl {
                 bmp.Dispose();
 
             _disposed = true;
-            
-            GC.SuppressFinalize(this);
         }
     }
 }

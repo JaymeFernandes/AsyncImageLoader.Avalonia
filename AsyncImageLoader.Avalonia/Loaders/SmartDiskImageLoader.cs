@@ -1,7 +1,4 @@
-using System;
 using System.IO;
-using System.Security.Cryptography;
-using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 
@@ -10,7 +7,6 @@ namespace AsyncImageLoader.Loaders;
 public class SmartDiskImageLoader : SmartRamImageLoader {
     
     private readonly string _cacheFolder;
-    
     
     public SmartDiskImageLoader(string cacheFolder = "Cache/Images/") {
         _cacheFolder = cacheFolder;
@@ -48,14 +44,4 @@ public class SmartDiskImageLoader : SmartRamImageLoader {
         return Task.CompletedTask;
     }
 #endif
-
-    protected static string CreateMD5(string input) {
-        // Use input string to calculate MD5 hash
-        using var md5 = MD5.Create();
-        var inputBytes = Encoding.ASCII.GetBytes(input);
-        var hashBytes = md5.ComputeHash(inputBytes);
-
-        // Convert the byte array to hexadecimal string
-        return BitConverter.ToString(hashBytes).Replace("-", "");
-    }
 }

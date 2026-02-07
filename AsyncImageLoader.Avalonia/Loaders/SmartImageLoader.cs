@@ -31,11 +31,9 @@ public class SmartImageLoader : BaseWebImageLoader
         }
         catch (Exception e)
         {
-            Debug.Print(
-                "Failed to resolve image from request with uri: {0}\nException: {1}",
+            Logger.Value.Log("Failed to resolve image from request with uri: {0}\nException: {1}",
                 url,
-                e
-            );
+                e);
 
             return null;
         }

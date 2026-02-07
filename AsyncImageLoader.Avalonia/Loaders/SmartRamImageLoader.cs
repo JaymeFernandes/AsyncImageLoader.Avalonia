@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Logging;
@@ -11,20 +10,17 @@ namespace AsyncImageLoader.Loaders;
 
 public class SmartRamImageLoader : SmartImageLoader {
 
-    public static int Capacity = 10;
+    public int Capacity = 10;
+    
+    private readonly object _lruLock = new();
 
-    private static readonly object _lruLock = new();
+    private readonly ConcurrentDictionary<string, byte[]?> _memoryCache = new();
 
-    private static readonly ConcurrentDictionary<string, byte[]?> _memoryCache = new();
+    private readonly ConcurrentDictionary<string, LinkedListNode<string>> _nodeCache = new();
 
-    private static readonly ConcurrentDictionary<string, LinkedListNode<string>> _nodeCache = new();
-
-    private static readonly LinkedList<string> _urls = new();
-
-    private readonly ParametrizedLogger? _logger;
+    private readonly LinkedList<string> _urls = new();
 
     public SmartRamImageLoader() {
-        _logger = Logger.TryGet(LogEventLevel.Error, ImageLoader.AsyncImageLoaderLogArea);
     }
 
     protected void AddToCacheAndLRU(string url, byte[] bytes) {
@@ -69,7 +65,7 @@ public class SmartRamImageLoader : SmartImageLoader {
             return Task.FromResult<Bitmap?>(bitmap);
         }
         catch (Exception e) {
-            Debug.Print(
+            Logger.Value.Log(
                 "Failed to load bitmap from memory cache. Url: {Url}, Exception: {Exception}",
                 url,
                 e

@@ -1,6 +1,8 @@
 ﻿using System;
 using System.IO;
 using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Logging;
 using Avalonia.Media.Imaging;
@@ -14,7 +16,8 @@ namespace AsyncImageLoader.Loaders;
 ///     Can be used as base class if you want to create custom caching mechanism
 /// </summary>
 public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
-    private readonly ParametrizedLogger? _logger;
+    protected readonly ParametrizedLogger? Logger;
+    
     private readonly bool _shouldDisposeHttpClient;
 
     /// <summary>
@@ -34,7 +37,7 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
     public BaseWebImageLoader(HttpClient httpClient, bool disposeHttpClient) {
         HttpClient = httpClient;
         _shouldDisposeHttpClient = disposeHttpClient;
-        _logger = Logger.TryGet(LogEventLevel.Error, ImageLoader.AsyncImageLoaderLogArea);
+        Logger = Avalonia.Logging.Logger.TryGet(LogEventLevel.Error, ImageLoader.AsyncImageLoaderLogArea);
     }
 
     protected HttpClient HttpClient { get; }
@@ -90,7 +93,7 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
             return bitmap;
         }
         catch (Exception e) {
-            _logger?.Log(this, "Failed to resolve image: {RequestUri}\nException: {Exception}", url, e);
+            Logger?.Log(this, "Failed to resolve image: {RequestUri}\nException: {Exception}", url, e);
 
             return null;
         }
@@ -106,11 +109,8 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
             return new Bitmap(url);
 
         if (storageProvider is null) return null;
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) {
-            if (uri.Scheme != "file" && uri.Scheme != "content") {
-                return null;
-            }
-        } 
+        
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("file" or "content")) return null;
 
         try {
             var fileInfo = await storageProvider.TryGetFileFromPathAsync(uri);
@@ -119,7 +119,7 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
             return new Bitmap(fileStream);
         }
         catch (Exception e) {
-            _logger?.Log(this,
+            Logger?.Log(this,
                 "Failed to resolve local image via storage provider with uri: {RequestUri}\nException: {Exception}",
                 url, e);
             return null;
@@ -148,7 +148,7 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
             return Task.FromResult(new Bitmap(AssetLoader.Open(uri)))!;
         }
         catch (Exception e) {
-            _logger?.Log(this,
+            Logger?.Log(this,
                 "Failed to resolve image from request with uri: {RequestUri}\nException: {Exception}", url, e);
             return Task.FromResult<Bitmap?>(null);
         }
@@ -165,7 +165,7 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
             return await HttpClient.GetByteArrayAsync(url).ConfigureAwait(false);
         }
         catch (Exception e) {
-            _logger?.Log(this,
+            Logger?.Log(this,
                 "Failed to resolve image from request with uri: {RequestUri}\nException: {Exception}", url, e);
             return null;
         }
@@ -200,5 +200,15 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
 
     protected virtual void Dispose(bool disposing) {
         if (disposing && _shouldDisposeHttpClient) HttpClient.Dispose();
+    }
+    
+    protected static string CreateMD5(string input) {
+        // Use input string to calculate MD5 hash
+        using var md5 = MD5.Create();
+        var inputBytes = Encoding.ASCII.GetBytes(input);
+        var hashBytes = md5.ComputeHash(inputBytes);
+
+        // Convert the byte array to hexadecimal string
+        return BitConverter.ToString(hashBytes).Replace("-", "");
     }
 }

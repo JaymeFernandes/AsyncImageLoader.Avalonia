@@ -1,8 +1,5 @@
-﻿using System;
-using System.IO;
+﻿using System.IO;
 using System.Net.Http;
-using System.Security.Cryptography;
-using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 
@@ -48,14 +45,4 @@ public class DiskCachedWebImageLoader : RamCachedWebImageLoader {
         File.WriteAllBytes(path, imageBytes);
     }
 #endif
-
-    protected static string CreateMD5(string input) {
-        // Use input string to calculate MD5 hash
-        using var md5 = MD5.Create();
-        var inputBytes = Encoding.ASCII.GetBytes(input);
-        var hashBytes = md5.ComputeHash(inputBytes);
-
-        // Convert the byte array to hexadecimal string
-        return BitConverter.ToString(hashBytes).Replace("-", "");
-    }
 }

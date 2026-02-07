@@ -24,24 +24,23 @@ public static class ImageLoader {
         SourceProperty.Changed.AddClassHandler<Image>(OnSourceChanged);
         Logger = Avalonia.Logging.Logger.TryGet(LogEventLevel.Error, AsyncImageLoaderLogArea);
     }
-
-
+    
+    public static IAsyncImageLoader AsyncImageLoader { get; set; } = new RamCachedWebImageLoader();
+    
     public static bool EnableAutoCacheCleanup = true;
-    public static IAsyncImageLoader AsyncImageLoader { get; set; } = new SmartRamImageLoader();
 
     private static readonly ConcurrentDictionary<Image, CancellationTokenSource> PendingOperations = new();
 
-    private static async void OnSourceChanged(Image sender, AvaloniaPropertyChangedEventArgs args) {
+    private static async void OnSourceChanged(Image sender, AvaloniaPropertyChangedEventArgs args)
+    {
         var url = args.GetNewValue<string?>();
 
-        // Cancel/Add new pending operation
         var cts = PendingOperations.AddOrUpdate(sender, new CancellationTokenSource(),
-            (x, oldCts) => {
-                oldCts.Cancel();
-                oldCts.Dispose();
+            (_, y) => {
+                y.Cancel();
                 return new CancellationTokenSource();
             });
-        
+
         if (string.IsNullOrWhiteSpace(url))
         {
             if (PendingOperations.TryRemove(sender, out var removedCts))
@@ -58,31 +57,19 @@ public static class ImageLoader {
 
         Bitmap? bitmap = null;
 
-        try {
-            bitmap = await Task.Run(async () => {
-                try {
-                    // A small delay allows to cancel early if the image goes out of screen too fast (eg. scrolling)
-                    // The Bitmap constructor is expensive and cannot be cancelled
-                    await Task.Delay(10, cts.Token);
-
-                    if (AsyncImageLoader is IAdvancedAsyncImageLoader advancedLoader) {
-                        return await advancedLoader.ProvideImageAsync(url, TopLevel.GetTopLevel(sender)?.StorageProvider);
-                    }
-
-                    return await AsyncImageLoader.ProvideImageAsync(url);
-                }
-                catch (TaskCanceledException) {
-                    return null;
-                }
-                catch (Exception e) {
-                    Logger?.Log(LogEventLevel.Error, "ImageLoader image resolution failed: {0}", e);
-
-                    return null;
-                }
-            }, cts.Token);
+        try
+        {
+            if (AsyncImageLoader is IAdvancedAsyncImageLoader advancedLoader)
+                bitmap = await advancedLoader.ProvideImageAsync(url, TopLevel.GetTopLevel(sender)?.StorageProvider);
+            else
+                bitmap = await AsyncImageLoader.ProvideImageAsync(url);
         }
-        catch (OperationCanceledException) { }
-        
+        catch (TaskCanceledException) { }
+        catch (Exception e)
+        {
+            Logger?.Log(LogEventLevel.Error, "ImageLoader image resolution failed: {0}", e);
+        }
+
         if (!cts.Token.IsCancellationRequested && bitmap != null)
         {
             if (sender.Source is Bitmap oldBmp)
@@ -100,6 +87,7 @@ public static class ImageLoader {
 
         SetIsLoading(sender, false);
     }
+
 
     public static string? GetSource(Image element) {
         return element.GetValue(SourceProperty);
