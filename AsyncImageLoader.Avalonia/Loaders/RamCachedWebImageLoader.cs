@@ -1,7 +1,9 @@
-﻿using System.Collections.Concurrent;
+﻿using System;
+using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using IStorageProvider = Avalonia.Platform.Storage.IStorageProvider;
 
 namespace AsyncImageLoader.Loaders;
 
@@ -13,7 +15,7 @@ public class RamCachedWebImageLoader : BaseWebImageLoader {
     private readonly ConcurrentDictionary<string, Task<Bitmap?>> _memoryCache = new();
 
     /// <inheritdoc />
-    public RamCachedWebImageLoader() { }
+    public RamCachedWebImageLoader() {  }
 
     /// <inheritdoc />
     public RamCachedWebImageLoader(HttpClient httpClient, bool disposeHttpClient) : base(httpClient,
@@ -22,7 +24,21 @@ public class RamCachedWebImageLoader : BaseWebImageLoader {
 
     /// <inheritdoc />
     public override async Task<Bitmap?> ProvideImageAsync(string url) {
-        var bitmap = await _memoryCache.GetOrAdd(url, LoadAsync).ConfigureAwait(false);
+        var bitmap = await _memoryCache.GetOrAdd(url, LoadAsync)
+            .ConfigureAwait(false);
+        
+        
+        // If load failed - remove from cache and return
+        // Next load attempt will try to load image again
+        if (bitmap == null) _memoryCache.TryRemove(url, out _);
+        return bitmap;
+    }
+
+    public override async Task<Bitmap?> ProvideImageAsync(string url, IStorageProvider? storageProvider = null) {
+        var bitmap = await _memoryCache.GetOrAdd(url, LoadAsync)
+            .ConfigureAwait(false);
+        
+        
         // If load failed - remove from cache and return
         // Next load attempt will try to load image again
         if (bitmap == null) _memoryCache.TryRemove(url, out _);

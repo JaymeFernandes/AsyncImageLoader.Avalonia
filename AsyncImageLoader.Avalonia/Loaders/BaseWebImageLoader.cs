@@ -17,7 +17,6 @@ namespace AsyncImageLoader.Loaders;
 /// </summary>
 public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
     protected readonly ParametrizedLogger? Logger;
-    
     private readonly bool _shouldDisposeHttpClient;
 
     /// <summary>
@@ -53,7 +52,7 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
     }
 
     /// <inheritdoc />
-    public async Task<Bitmap?> ProvideImageAsync(string url, IStorageProvider? storageProvider = null) {
+    public virtual async Task<Bitmap?> ProvideImageAsync(string url, IStorageProvider? storageProvider = null) {
         return await LoadAsync(url, storageProvider).ConfigureAwait(false);
     }
 
@@ -78,8 +77,8 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
     protected virtual async Task<Bitmap?> LoadAsync(string url) {
         var internalOrCachedBitmap =
             await LoadFromLocalAsync(url, null).ConfigureAwait(false)
-            ?? await LoadFromInternalAsync(url).ConfigureAwait(false)
-            ?? await LoadFromGlobalCache(url).ConfigureAwait(false);
+            ?? await LoadFromGlobalCache(url).ConfigureAwait(false)
+            ?? await LoadFromInternalAsync(url).ConfigureAwait(false);
         if (internalOrCachedBitmap != null) return internalOrCachedBitmap;
 
         try {

@@ -35,5 +35,7 @@
     <TabItem Header="Safe Memory Demo">
       <pages:AdvancedImageSafeMemoryPage />
     </TabItem>
+    <TabItem Header="No images">
+    </TabItem>
   </controls:HamburgerMenu>
 </Window>

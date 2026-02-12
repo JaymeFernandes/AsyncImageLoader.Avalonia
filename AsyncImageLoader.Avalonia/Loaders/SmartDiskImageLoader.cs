@@ -1,10 +1,11 @@
 using System.IO;
 using System.Threading.Tasks;
+using AsyncImageLoader.Memory.Services;
 using Avalonia.Media.Imaging;
 
 namespace AsyncImageLoader.Loaders;
 
-public class SmartDiskImageLoader : SmartRamImageLoader {
+public class SmartDiskImageLoader : SmartImageLoader, ICoordinatedImageLoader {
     
     private readonly string _cacheFolder;
     
@@ -12,20 +13,20 @@ public class SmartDiskImageLoader : SmartRamImageLoader {
         _cacheFolder = cacheFolder;
     }
     
-    protected override async Task<Bitmap?> LoadFromGlobalCache(string url) {
-        var value = await LoadCacheMemory(url);
-        
-        if(value != null)
-            return value;
-        
+    protected override Task<Bitmap?> LoadFromGlobalCache(string url) {
         var path = Path.Combine(_cacheFolder, CreateMD5(url));
 
-        return File.Exists(path) ? new Bitmap(path) : null;
+        return File.Exists(path) ? Task.FromResult<Bitmap?>(new Bitmap(path)) : Task.FromResult<Bitmap?>(null);
     }
     
 #if NETSTANDARD2_1
         protected sealed override async Task SaveToGlobalCache(string url, byte[] imageBytes) {
-            AddToCacheAndLRU(url, imageBytes);
+            using var memoryStream = new MemoryStream(imageBytes);
+        
+            var bitmap = new Bitmap(memoryStream);
+            var entry = new BitmapEntry(url, bitmap);
+        
+            BitmapStore.Instance.Add(entry);
 
             var path = Path.Combine(_cacheFolder, CreateMD5(url));
 
@@ -35,7 +36,12 @@ public class SmartDiskImageLoader : SmartRamImageLoader {
 #else
     protected sealed override Task SaveToGlobalCache(string url, byte[] imageBytes) {
         
-        AddToCacheAndLRU(url, imageBytes);
+        using var memoryStream = new MemoryStream(imageBytes);
+        
+        var bitmap = new Bitmap(memoryStream);
+        var entry = new BitmapEntry(url, bitmap);
+        
+        BitmapStore.Instance.Add(entry);
         
         var path = Path.Combine(_cacheFolder, CreateMD5(url));
         Directory.CreateDirectory(_cacheFolder);

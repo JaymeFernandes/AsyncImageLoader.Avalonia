@@ -6,6 +6,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media.Imaging;
 using System.Collections.Concurrent;
+using AsyncImageLoader.Memory;
+using AsyncImageLoader.Memory.Services;
 using Avalonia.Logging;
 
 namespace AsyncImageLoader;
@@ -27,7 +29,10 @@ public static class ImageLoader {
     
     public static IAsyncImageLoader AsyncImageLoader { get; set; } = new RamCachedWebImageLoader();
     
-    public static bool EnableAutoCacheCleanup = true;
+    public static TimeSpan DefaultImageLifetime { get; set; } = TimeSpan.FromSeconds(10);
+    
+    public static BitmapCacheCoordinator BitmapCacheEvictionManager { get; set; } = 
+        new (new VisibilityTimeoutPolicy());
 
     private static readonly ConcurrentDictionary<Image, CancellationTokenSource> PendingOperations = new();
 

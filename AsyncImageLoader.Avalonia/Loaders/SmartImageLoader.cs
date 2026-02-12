@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Concurrent;
-using System.Diagnostics;
 using System.Threading.Tasks;
 
 namespace AsyncImageLoader.Loaders;
 
-public class SmartImageLoader : BaseWebImageLoader
+public class SmartImageLoader : BaseWebImageLoader, ICoordinatedImageLoader
 {
-    private static readonly ConcurrentDictionary<string, Task<byte[]?>> _loadingTasks = new();
+    private readonly ConcurrentDictionary<string, Task<byte[]?>> _loadingTasks = new();
 
     protected override async Task<byte[]?> LoadDataFromExternalAsync(string url)
     {

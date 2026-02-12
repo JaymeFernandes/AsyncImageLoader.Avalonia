@@ -13,15 +13,15 @@ public class App : Application {
     }
 
     public override void OnFrameworkInitializationCompleted() {
+        ImageLoader.AsyncImageLoader = new SmartImageLoader();
+        
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop) {
             desktop.MainWindow = new MainWindow {
                 DataContext = new MainWindowViewModel(),
             };
             desktop.MainWindow.AttachDevTools();
         }
-
-        ImageLoader.AsyncImageLoader = new SmartRamImageLoader();
-
+        
         base.OnFrameworkInitializationCompleted();
     }
 }

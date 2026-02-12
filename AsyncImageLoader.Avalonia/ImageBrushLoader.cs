@@ -11,7 +11,7 @@ namespace AsyncImageLoader;
 
 public static class ImageBrushLoader {
     private static readonly ParametrizedLogger? Logger;
-    public static IAsyncImageLoader AsyncImageLoader { get; set; } = new SmartRamImageLoader();
+    public static IAsyncImageLoader AsyncImageLoader { get; set; } = new RamCachedWebImageLoader();
 
     private static readonly ConcurrentDictionary<ImageBrush, CancellationTokenSource> PendingOperations = new();
     

@@ -1,13 +1,17 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using AsyncImageLoader.Loaders;
+using AsyncImageLoader.Memory.Services;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Logging;
+using Avalonia.LogicalTree;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 
 namespace AsyncImageLoader;
@@ -73,15 +77,13 @@ public partial class AdvancedImage : ContentControl {
     private bool _isCornerRadiusUsed;
 
     private bool _isLoading;
-
+    
     private bool _shouldLoaderChangeTriggerUpdate;
-
+    
     private CancellationTokenSource? _updateCancellationToken;
     private readonly ParametrizedLogger? _logger;
     
-    private CancellationTokenSource? _loadCancellationTokenSource = new CancellationTokenSource();
-    private bool _isAttachedToVisualTree = false;
-    private bool _isCompleted = false;
+    private BitmapLease? _lease;
 
     static AdvancedImage() {
         AffectsRender<AdvancedImage>(CurrentImageProperty, StretchProperty, StretchDirectionProperty,
@@ -143,10 +145,7 @@ public partial class AdvancedImage : ContentControl {
     /// </summary>
     public IImage? CurrentImage {
         get => _currentImage;
-        set
-        {
-            SetAndRaise(CurrentImageProperty, ref _currentImage, value);
-        }
+        set => SetAndRaise(CurrentImageProperty, ref _currentImage, value);
     }
 
     /// <summary>
@@ -188,37 +187,29 @@ public partial class AdvancedImage : ContentControl {
 
     private async Task UpdateImage(string? source, IAsyncImageLoader? loader)
     {
-        var cts = new CancellationTokenSource();
-        var oldCts = Interlocked.Exchange(ref _updateCancellationToken, cts);
-
-        try
-        {
-            oldCts?.Cancel();
-        }
-        catch (ObjectDisposedException) { }
+        var cts = ReplaceCts(ref _updateCancellationToken);
 
         if (source is null && CurrentImage is not ImageWrapper)
+        {
             return;
+        }
 
         IsLoading = true;
 
-        IImage? bitmap = null;
+        var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
 
-        try {
-            bitmap = await Task.Run(async () => 
-                await LoadImageInternalAsync(source, loader, cts.Token));
+        BitmapLease? lease;
+
+        try
+        {
+            lease = await LoadImageInternalAsync(source, loader, storage, cts.Token);
         }
         catch (TaskCanceledException)
         {
-            if (bitmap is Bitmap bmp) 
-                bmp.Dispose();
             return;
         }
         catch (Exception e)
         {
-            _logger?.Log(this, "AdvancedImage image resolution failed: {0}", e);
-            if (bitmap is Bitmap bmp) 
-                bmp.Dispose();
             return;
         }
         finally
@@ -228,47 +219,89 @@ public partial class AdvancedImage : ContentControl {
 
         if (cts.IsCancellationRequested)
         {
-            if (bitmap is Bitmap bmp) bmp.Dispose();
             return;
         }
 
-        if (CurrentImage is ImageWrapper wrapper)
-            wrapper.Dispose();
+        var oldImage = CurrentImage as ImageWrapper;
 
-        CurrentImage = bitmap is null ? null : new ImageWrapper(bitmap);
+        if (oldImage != null)
+        {
+            oldImage.Dispose();
+        }
+
+        CurrentImage = lease is null ? null : new ImageWrapper(lease);
+
         IsLoading = false;
-
-        _isCompleted = true;
     }
+
+
     
-    private async Task<Bitmap?> LoadImageInternalAsync(
+    private async Task<BitmapLease?> LoadImageInternalAsync(
         string source,
         IAsyncImageLoader? loader,
+        IStorageProvider? storage,
         CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
 
-        try
-        {
-            var uri = new Uri(source, UriKind.RelativeOrAbsolute);
+        loader = loader is null ? ImageLoader.AsyncImageLoader : loader;
+        
+        if (loader is ICoordinatedImageLoader coordinated) {
+            if (source == null)
+                return default;
             
-            using var stream = AssetLoader.Open(uri, _baseUri);
             
-            if (AssetLoader.Exists(uri, _baseUri))
-                return new Bitmap(stream);
+
+            if (_lease != null) {
+                _lease.Dispose();
+                _lease = null;
+            }
+
+            return await ImageLoader.BitmapCacheEvictionManager.GetOrAdd(source, async () => await Load());
         }
-        catch { }
-            
-        loader ??= ImageLoader.AsyncImageLoader;
+        
+        var entry = new BitmapEntry(source, await Load());
+        
+        return new BitmapLease(entry); 
 
-        if (loader is IAdvancedAsyncImageLoader advanced)
-            return await advanced.ProvideImageAsync(source, TopLevel.GetTopLevel(this)?.StorageProvider);
+        async Task<Bitmap?> Load() {
+            var uri = new Uri(source, UriKind.RelativeOrAbsolute);
 
-        return await loader.ProvideImageAsync(source);
+            if (AssetLoader.Exists(uri, _baseUri))
+            {
+                var stream = AssetLoader.Open(uri, _baseUri);
+                
+                try {
+                    return await Task.Run(() =>
+                    {
+                        token.ThrowIfCancellationRequested();
+                        return new Bitmap(stream);
+                    }, token);
+                }
+                finally {
+                    stream.Dispose();
+                } 
+            }
+
+            loader ??= ImageLoader.AsyncImageLoader;
+
+            if (loader is IAdvancedAsyncImageLoader advanced) {
+                var img = await advanced
+                    .ProvideImageAsync(source, storage)
+                    .ConfigureAwait(false);
+
+
+                return img;
+            }
+
+            var result = await loader
+                .ProvideImageAsync(source)
+                .ConfigureAwait(false);
+
+            return result;
+        }
     }
-
     
-
     private void UpdateCornerRadius(CornerRadius radius) {
         _isCornerRadiusUsed = radius != default;
         _cornerRadiusClip = new RoundedRect(new Rect(0, 0, Bounds.Width, Bounds.Height), radius);
@@ -319,101 +352,93 @@ public partial class AdvancedImage : ContentControl {
             ? Stretch.CalculateSize(finalSize, CurrentImage.Size)
             : base.ArrangeOverride(finalSize);
     }
-    
-    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e) {
-        _isAttachedToVisualTree = true;
-        base.OnAttachedToVisualTree(e);
 
-        if (!_isCompleted) {
-            _ = Dispatcher.UIThread.InvokeAsync(HandleAttachedAsync);
-        }
-            
-    }
+    protected override void OnAttachedToLogicalTree(LogicalTreeAttachmentEventArgs e) {
+        base.OnAttachedToLogicalTree(e);
 
-    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e) {
-        _isAttachedToVisualTree = false;
-        
-        base.OnDetachedFromVisualTree(e);
-        
-        if (ImageLoader.EnableAutoCacheCleanup)
-            ScheduleDispose();
+        _ = Dispatcher.UIThread.InvokeAsync(HandleAttachedAsync);
     }
     
-    private async Task HandleAttachedAsync() {
-        if (ImageLoader.EnableAutoCacheCleanup && !_isCompleted) {
-            var cts = new CancellationTokenSource();
-            var oldCts = Interlocked.Exchange(ref _loadCancellationTokenSource, cts);
+    private async Task HandleAttachedAsync()
+        => await UpdateImage(Source, Loader);
 
-            await Task.Delay(10);
-
-            try
-            {
-                oldCts?.Cancel();
-            }
-            catch (ObjectDisposedException) { }
-        
-        
-            if (CurrentImage == null)
-                await UpdateImage(Source, Loader);
-        }
-    }
-    
-    private void ScheduleDispose()
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        if (CurrentImage is not ImageWrapper wrapper || !_isCompleted || _isAttachedToVisualTree)
+        base.OnDetachedFromVisualTree(e);
+
+        //Loader = Loader is null ? ImageLoader.AsyncImageLoader : Loader;
+        
+        if (Loader is ICoordinatedImageLoader coordinated) {
+            var oldImage = CurrentImage as ImageWrapper;
+            
+            oldImage.Dispose();
+        }
+    }
+    
+    
+    private static CancellationTokenSource ReplaceCts(ref CancellationTokenSource? field)
+    {
+        var newCts = new CancellationTokenSource();
+        var old = Interlocked.Exchange(ref field, newCts);
+
+        if (old != null)
+        {
+            try { old.Cancel(); }
+            catch { }
+            old.Dispose();
+        }
+
+        return newCts;
+    }
+
+    private static void CancelAndDispose(ref CancellationTokenSource? cts)
+    {
+        var old = Interlocked.Exchange(ref cts, null);
+
+        if (old == null)
             return;
 
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(2000, _loadCancellationTokenSource!.Token);
+        try { old.Cancel(); }
+        catch { }
 
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    if (!_isAttachedToVisualTree)
-                    {
-                        _isCompleted = false;
-                        
-                        if (CurrentImage is ImageWrapper w)
-                            w.Dispose();
-
-                        CurrentImage = null;
-                    }
-                });
-            }
-            catch (TaskCanceledException) { }
-            
-        }, _loadCancellationTokenSource!.Token);
+        old.Dispose();
     }
 
+    public sealed class ImageWrapper : IImage, IDisposable
+    {
+        private BitmapLease _lease;
+        private bool _disposed = false;
 
-    public sealed class ImageWrapper : IImage, IDisposable {
-        public IImage ImageImplementation { get; }
-
-        private bool _disposed;
-
-        internal ImageWrapper(IImage imageImplementation)
+        public ImageWrapper(BitmapLease lease)
         {
-            ImageImplementation = imageImplementation;
+            _lease = lease;
         }
 
-        public void Draw(DrawingContext context, Rect sourceRect, Rect destRect)
-        {
-            ImageImplementation.Draw(context, sourceRect, destRect);
+        ~ImageWrapper() {
+            Dispose();
         }
-
-        public Size Size => ImageImplementation.Size;
 
         public void Dispose()
         {
             if (_disposed)
                 return;
-
-            if (ImageImplementation is Bitmap bmp)
-                bmp.Dispose();
-
-            _disposed = true;
+            
+            _lease?.Dispose();
         }
+
+        public Size Size
+        {
+            get
+            {
+                
+                if (_lease.Bitmap == null || _disposed)
+                    return new Size(0,0);
+                
+                return _lease.Bitmap.Size;
+            }
+        }
+
+        public void Draw(DrawingContext context, Rect s, Rect d)
+            => ((IImage)_lease?.Bitmap).Draw(context, s, d);
     }
 }
