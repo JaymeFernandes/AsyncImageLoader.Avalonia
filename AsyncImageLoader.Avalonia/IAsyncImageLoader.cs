@@ -12,3 +12,8 @@ public interface IAsyncImageLoader : IDisposable {
     /// <returns>Bitmap</returns>
     public Task<Bitmap?> ProvideImageAsync(string url);
 }
+
+public interface ICoordinatedImageLoader : IDisposable
+{
+    
+}

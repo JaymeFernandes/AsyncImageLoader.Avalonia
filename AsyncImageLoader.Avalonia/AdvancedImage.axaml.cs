@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using AsyncImageLoader.Memory.Services;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Logging;
@@ -8,10 +9,12 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
+using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 
 namespace AsyncImageLoader;
 
-public class AdvancedImage : ContentControl {
+public partial class AdvancedImage : ContentControl {
     /// <summary>
     ///     Defines the <see cref="Loader" /> property.
     /// </summary>
@@ -23,8 +26,7 @@ public class AdvancedImage : ContentControl {
     /// </summary>
     public static readonly StyledProperty<string?> SourceProperty =
         AvaloniaProperty.Register<AdvancedImage, string?>(nameof(Source));
-
-
+    
     /// <summary>
     ///     Defines the <see cref="FallbackImage" /> property.
     /// </summary>
@@ -68,7 +70,7 @@ public class AdvancedImage : ContentControl {
     /// </summary>
     public static readonly StyledProperty<StretchDirection> StretchDirectionProperty =
         Image.StretchDirectionProperty.AddOwner<AdvancedImage>();
-
+    
     private readonly Uri? _baseUri;
 
     private RoundedRect _cornerRadiusClip;
@@ -77,11 +79,14 @@ public class AdvancedImage : ContentControl {
     private bool _isCornerRadiusUsed;
 
     private bool _isLoading;
-
+    
     private bool _shouldLoaderChangeTriggerUpdate;
-
+    
     private CancellationTokenSource? _updateCancellationToken;
     private readonly ParametrizedLogger? _logger;
+    
+    private BitmapLease? _lease;
+    private string? _source;
 
     static AdvancedImage() {
         AffectsRender<AdvancedImage>(CurrentImageProperty, StretchProperty, StretchDirectionProperty,
@@ -119,22 +124,27 @@ public class AdvancedImage : ContentControl {
     /// </summary>
     public string? Source {
         get => GetValue(SourceProperty);
-        set => SetValue(SourceProperty, value);
+        set 
+        {
+            SetValue(SourceProperty, value);
+            _source = value;
+        }
     }
 
-    /// <summary>
-    ///     Gets or sets the Bitmap for Fallback image that will be displayed if the Source image isn't loaded.
-    /// </summary>
-    public Bitmap? FallbackImage {
-        get => GetValue(FallbackImageProperty);
-        set => SetValue(FallbackImageProperty, value);
-    }
     /// <summary>
     ///     Gets or sets the value controlling whether the image should be reloaded after changing the loader.
     /// </summary>
     public bool ShouldLoaderChangeTriggerUpdate {
         get => _shouldLoaderChangeTriggerUpdate;
         set => SetAndRaise(ShouldLoaderChangeTriggerUpdateProperty, ref _shouldLoaderChangeTriggerUpdate, value);
+    }
+    
+    /// <summary>
+    ///     Gets or sets the Bitmap for Fallback image that will be displayed if the Source image isn't loaded.
+    /// </summary>
+    public Bitmap? FallbackImage {
+        get => GetValue(FallbackImageProperty);
+        set => SetValue(FallbackImageProperty, value);
     }
 
     /// <summary>
@@ -171,17 +181,17 @@ public class AdvancedImage : ContentControl {
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change) {
         if (change.Property == SourceProperty)
-            UpdateImage(change.GetNewValue<string>(), Loader);
+            _ = UpdateImage(change.GetNewValue<string>(), Loader);
         else if (change.Property == LoaderProperty && ShouldLoaderChangeTriggerUpdate)
-            UpdateImage(change.GetNewValue<string>(), Loader);
+            _ = UpdateImage(change.GetNewValue<string>(), Loader);
         else if (change.Property == CurrentImageProperty)
             ClearSourceIfUserProvideImage();
         else if (change.Property == CornerRadiusProperty)
             UpdateCornerRadius(change.GetNewValue<CornerRadius>());
-        else if (change.Property == BoundsProperty && CornerRadius != default)
-            UpdateCornerRadius(CornerRadius);
+        else if (change.Property == BoundsProperty && CornerRadius != default) UpdateCornerRadius(CornerRadius);
         else if (change.Property == FallbackImageProperty && Source == null)
-            UpdateImage(null, null);
+            _ = UpdateImage(null, null);
+        
         base.OnPropertyChanged(change);
     }
 
@@ -192,77 +202,123 @@ public class AdvancedImage : ContentControl {
         }
     }
 
-    private async void UpdateImage(string? source, IAsyncImageLoader? loader) {
-        var cancellationTokenSource = new CancellationTokenSource();
+    private async Task UpdateImage(string? source, IAsyncImageLoader? loader) {
+        _source = source;
+        
+        var cts = ReplaceCts(ref _updateCancellationToken);
 
-        var oldCancellationToken = Interlocked.Exchange(ref _updateCancellationToken, cancellationTokenSource);
-
-        try {
-            oldCancellationToken?.Cancel();
-        }
-        catch (ObjectDisposedException) {
-        }
-
-        if (source is null && FallbackImage != null) {
-            CurrentImage =  FallbackImage;
-        }
-
-        if (source is null && CurrentImage is not ImageWrapper) {
-            // User provided image himself
+        if (source is null && CurrentImage is not ImageWrapper)
             return;
-        }
 
         IsLoading = true;
-        CurrentImage = null;
 
-        var bitmap = await Task.Run(async () => {
-            try {
-                if (string.IsNullOrWhiteSpace(source))
-                    return null;
+        var storage = TopLevel.GetTopLevel(this)?.StorageProvider;
 
-                // A small delay allows to cancel early if the image goes out of screen too fast (eg. scrolling)
-                // The Bitmap constructor is expensive and cannot be cancelled
-                await Task.Delay(10, cancellationTokenSource.Token);
+        BitmapLease? lease;
 
-                // Hack to support relative URI
-                // TODO: Refactor IAsyncImageLoader to support BaseUri 
-                try {
-                    var uri = new Uri(source, UriKind.RelativeOrAbsolute);
-                    if (AssetLoader.Exists(uri, _baseUri))
-                        return new Bitmap(AssetLoader.Open(uri, _baseUri));
-                }
-                catch (Exception) {
-                    // ignored
-                }
+        try
+        {
+            lease = await LoadImageInternalAsync(source, loader, storage, cts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+        catch (Exception e)
+        {
+            return;
+        }
+        finally
+        {
+            cts.Dispose();
+        }
 
-                loader ??= ImageLoader.AsyncImageLoader;
-
-                if (loader is IAdvancedAsyncImageLoader advancedLoader) {
-                    return await advancedLoader.ProvideImageAsync(source, TopLevel.GetTopLevel(this)?.StorageProvider);
-                }
-
-                return await loader.ProvideImageAsync(source);
-            }
-            catch (TaskCanceledException) {
-                return null;
-            }
-            catch (Exception e) {
-                _logger?.Log(this, "AdvancedImage image resolution failed: {0}", e);
-
-                return null;
-            }
-            finally {
-                cancellationTokenSource.Dispose();
-            }
-        }, CancellationToken.None);
-
-        if (cancellationTokenSource.IsCancellationRequested)
+        if (cts.IsCancellationRequested)
             return;
 
-        CurrentImage = bitmap is null ? null : new ImageWrapper(bitmap);
+        if (CurrentImage is ImageWrapper wrapper)
+            wrapper.Dispose();
+
+        CurrentImage = lease is null ? null : new ImageWrapper(lease);
+
         IsLoading = false;
     }
 
+
+    
+    private async Task<BitmapLease?> LoadImageInternalAsync(
+        string? source,
+        IAsyncImageLoader? loader,
+        IStorageProvider? storage,
+        CancellationToken token)
+    {
+        async Task<Bitmap?> Load()
+        {
+            token.ThrowIfCancellationRequested();
+
+            var uri = new Uri(source, UriKind.RelativeOrAbsolute);
+
+            if (AssetLoader.Exists(uri, _baseUri))
+            {
+                using var stream = AssetLoader.Open(uri, _baseUri);
+
+                token.ThrowIfCancellationRequested();
+                return new Bitmap(stream);
+            }
+
+            if (loader is IAdvancedAsyncImageLoader advanced)
+            {
+                token.ThrowIfCancellationRequested();
+
+                return await advanced
+                    .ProvideImageAsync(source, storage)
+                    .ConfigureAwait(false);
+            }
+
+            token.ThrowIfCancellationRequested();
+
+            return await loader
+                .ProvideImageAsync(source)
+                .ConfigureAwait(false);
+        }
+        
+        token.ThrowIfCancellationRequested();
+
+        loader ??= ImageLoader.AsyncImageLoader;
+
+        if (source == null)
+            return null;
+        
+        BitmapLease? lease = null;
+
+        try
+        {
+            if (loader is ICoordinatedImageLoader)
+            {
+                lease = await ImageLoader.BitmapCacheEvictionManager
+                    .GetOrAdd(source, Load);
+            }
+            else
+            {
+                var entry = new BitmapEntry(source, await Load());
+                lease = new BitmapLease(entry);
+            }
+
+            token.ThrowIfCancellationRequested();
+            return lease;
+        }
+        catch (TaskCanceledException)
+        {
+            lease?.Dispose();
+            throw;
+        }
+        catch
+        {
+            lease?.Dispose();
+            throw;
+        }
+    }
+    
     private void UpdateCornerRadius(CornerRadius radius) {
         _isCornerRadiusUsed = radius != default;
         _cornerRadiusClip = new RoundedRect(new Rect(0, 0, Bounds.Width, Bounds.Height), radius);
@@ -308,26 +364,92 @@ public class AdvancedImage : ContentControl {
             : base.MeasureOverride(availableSize);
     }
 
-    /// <inheritdoc />
     protected override Size ArrangeOverride(Size finalSize) {
         return CurrentImage != null
             ? Stretch.CalculateSize(finalSize, CurrentImage.Size)
             : base.ArrangeOverride(finalSize);
     }
 
-    public sealed class ImageWrapper : IImage {
-        public IImage ImageImplementation { get; }
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e) {
+        if (CurrentImage is null)
+            _ = Dispatcher.UIThread.InvokeAsync(HandleAttachedAsync);
+        
+        
+        base.OnAttachedToVisualTree(e);
+    }
 
-        internal ImageWrapper(IImage imageImplementation) {
-            ImageImplementation = imageImplementation;
+    private async Task HandleAttachedAsync()
+        => await UpdateImage(Source, Loader);
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e) {
+        ReleaseImage();
+        base.OnDetachedFromVisualTree(e);
+    }
+    
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        ReleaseImage();
+        base.OnDataContextChanged(e);
+    }
+    
+    private void ReleaseImage()
+    {
+        if (CurrentImage is ImageWrapper wrapper)
+        {
+            wrapper.Dispose();
+            CurrentImage = null;
+        }
+    }
+    
+    private static CancellationTokenSource ReplaceCts(ref CancellationTokenSource? field)
+    {
+        var newCts = new CancellationTokenSource();
+        var old = Interlocked.Exchange(ref field, newCts);
+
+        if (old != null)
+        {
+            try { old.Cancel(); }
+            catch { }
+            old.Dispose();
         }
 
-        /// <inheritdoc />
-        public void Draw(DrawingContext context, Rect sourceRect, Rect destRect) {
-            ImageImplementation.Draw(context, sourceRect, destRect);
+        return newCts;
+    }
+
+    public sealed class ImageWrapper : IImage, IDisposable
+    {
+        private BitmapLease _lease;
+        private bool _disposed = false;
+
+        private Size _size;
+        
+        public bool IsDisponse => _disposed;
+
+        public ImageWrapper(BitmapLease lease)
+        {
+            _lease = lease;
+            
+            _size = new Size(lease.Bitmap.Size.Width, lease.Bitmap.Size.Height );
+            
         }
 
-        /// <inheritdoc />
-        public Size Size => ImageImplementation.Size;
+        ~ImageWrapper() {
+            Dispose();
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+            
+            _lease?.Dispose();
+        }
+
+        public Size Size => _size;
+
+        public void Draw(DrawingContext context, Rect s, Rect d) 
+            => ((IImage)_lease?.Bitmap).Draw(context, s, d);
     }
 }
