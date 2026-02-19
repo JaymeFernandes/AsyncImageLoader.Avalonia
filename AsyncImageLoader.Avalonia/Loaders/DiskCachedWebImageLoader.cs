@@ -30,17 +30,19 @@ public class DiskCachedWebImageLoader : RamCachedWebImageLoader {
     }
 
 #if NETSTANDARD2_1
-        protected override async Task SaveToGlobalCache(string url, byte[] imageBytes) {
-            var path = Path.Combine(_cacheFolder, CreateMD5(url));
-
-            Directory.CreateDirectory(_cacheFolder);
-            await File.WriteAllBytesAsync(path, imageBytes).ConfigureAwait(false);
-        }
-#else
-    protected override async Task SaveToGlobalCache(string url, byte[] imageBytes) {
-        await base.SaveToGlobalCache(url, imageBytes);
-        
+    protected override async Task SaveToGlobalCache(string url, byte[] imageBytes) 
+    {
         var path = Path.Combine(_cacheFolder, CreateMD5(url));
+
+        Directory.CreateDirectory(_cacheFolder);
+        await File.WriteAllBytesAsync(path, imageBytes).ConfigureAwait(false);
+
+    }
+#else
+    protected override async Task SaveToGlobalCache(string url, byte[] imageBytes) 
+    {
+        var path = Path.Combine(_cacheFolder, CreateMD5(url));
+        
         Directory.CreateDirectory(_cacheFolder);
         File.WriteAllBytes(path, imageBytes);
     }

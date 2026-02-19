@@ -33,6 +33,7 @@
               Source="{Binding}"
               Height="200"
               Margin="4"
+              AutoCleanupEnabled="True"
               HorizontalAlignment="Center"
               VerticalAlignment="Center"/>
           </Border>

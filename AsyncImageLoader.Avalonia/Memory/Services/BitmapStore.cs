@@ -2,91 +2,64 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 
 namespace AsyncImageLoader.Memory.Services;
 
-public sealed class BitmapStore {
-    private readonly Dictionary<string, LinkedListNode<BitmapEntry>> _map = new();
-    private readonly LinkedList<BitmapEntry> _lru = new();
-    private readonly object _lock = new();
-    
+using System.Collections.Concurrent;
+
+public sealed class BitmapStore
+{
+    private readonly ConcurrentDictionary<string, BitmapEntry> _bitmaps = new();
+
+    internal ConcurrentBag<BitmapEntry> BitmapEntries { get; } = new();
+
     public static BitmapStore Instance { get; } = new BitmapStore();
-    
     private BitmapStore() { }
 
     public bool TryGet(string key, out BitmapEntry entry)
     {
-        lock (_lock)
+        if (_bitmaps.TryGetValue(key, out var node))
         {
-            if (_map.TryGetValue(key, out var node))
-            {
-                MoveToFront(node);
-                entry = node.Value;
-                return true;
-            }
-
-            entry = null!;
-            return false;
+            entry = node;
+            return true;
         }
+
+        entry = null!;
+        return false;
     }
 
-    public async Task<Bitmap?> GetOrAdd(string key, Func<Bitmap?> factory) {
-        lock (_lock) {
-            if (TryGet(key, out var entry))
-                return entry.Bitmap;
-        
-            var bitmap = factory();
-            
-            if (bitmap == null)
-                return bitmap;
-        
-            entry = new BitmapEntry(key, bitmap);
-        
-            Add(entry);
-
-            return bitmap;
-        }
-    }
-
-    public void Add(BitmapEntry entry)
+    public void TryAdd(BitmapEntry entry, bool acquire = false)
     {
-        lock (_lock)
-        {
-            if (_map.ContainsKey(entry.Key))
-                return;
-
-            var node = new LinkedListNode<BitmapEntry>(entry);
-            _lru.AddFirst(node);
-            _map[entry.Key] = node;
-        }
+        if(acquire)
+            entry.Acquire();
+        
+        _bitmaps.TryAdd(entry.Key, entry);
     }
 
     public IEnumerable<BitmapEntry> EnumerateFromOldest()
     {
-        lock (_lock)
-        {
-            return _lru.OrderBy(x => x.RefCount).ToList();
-        }
+        BitmapEntry[] snapshot;
+        snapshot = _bitmaps.Values.Concat(BitmapEntries).ToArray();
+        
+        return snapshot.OrderBy(x => x.RefCount).ToArray();
     }
 
-    public void Remove(string key)
-    {
-        lock (_lock)
-        {
-            if (!_map.TryGetValue(key, out var node))
-                return;
-
-            _lru.Remove(node);
-            _map.Remove(key);
-        }
+    public void Remove(string key) {
+        _bitmaps.TryRemove(key, out var node);
     }
 
-    private void MoveToFront(LinkedListNode<BitmapEntry> node)
+    public void AddBitmapEntry(BitmapEntry bitmapEntry)
     {
-        _lru.Remove(node);
-        _lru.AddFirst(node);
+        BitmapEntries.Add(bitmapEntry);
+    }
+
+    public void RemoveBitmapEntry(string url)
+    {
+        var toRemove = BitmapEntries.Where(x => x.Key == url).ToList();
+        
+        foreach (var entry in toRemove)
+            BitmapEntries.TryTake(out _);
     }
 }
 
@@ -106,13 +79,11 @@ public sealed class BitmapEntry : IDisposable
         Bitmap = bitmap;
     }
 
-    public void Acquire()
-    {
+    public void Acquire() {
         Interlocked.Increment(ref _refCount);
     }
 
-    public void Release()
-    {
+    public void Release() {
         if (Interlocked.Decrement(ref _refCount) == 0)
             LastReleased = DateTime.UtcNow;
     }

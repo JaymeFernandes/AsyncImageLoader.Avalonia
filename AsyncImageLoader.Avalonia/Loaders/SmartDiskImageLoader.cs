@@ -26,7 +26,7 @@ public class SmartDiskImageLoader : SmartImageLoader, ICoordinatedImageLoader {
             var bitmap = new Bitmap(memoryStream);
             var entry = new BitmapEntry(url, bitmap);
         
-            BitmapStore.Instance.Add(entry);
+            BitmapStore.Instance.TryAdd(entry);
 
             var path = Path.Combine(_cacheFolder, CreateMD5(url));
 
@@ -41,7 +41,7 @@ public class SmartDiskImageLoader : SmartImageLoader, ICoordinatedImageLoader {
         var bitmap = new Bitmap(memoryStream);
         var entry = new BitmapEntry(url, bitmap);
         
-        BitmapStore.Instance.Add(entry);
+        BitmapStore.Instance.TryAdd(entry);
         
         var path = Path.Combine(_cacheFolder, CreateMD5(url));
         Directory.CreateDirectory(_cacheFolder);

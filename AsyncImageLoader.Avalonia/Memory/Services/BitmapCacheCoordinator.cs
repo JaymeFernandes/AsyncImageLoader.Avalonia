@@ -16,23 +16,22 @@ public class BitmapCacheCoordinator : IDisposable
         _ = CleanupLoop(_cts.Token);
     }
 
-    public async Task<BitmapLease?> GetOrAdd(string key, Func<Task<Bitmap>> factory) {
+    public async Task<BitmapEntry?> GetOrAdd(string key, Func<Task<Bitmap>> factory) {
         if (BitmapStore.Instance.TryGet(key, out var result))
-            return new BitmapLease(result);
+            return result;
         
-        var bitmap = await factory();
-        var entry = new BitmapEntry(key, bitmap);
+        var entry = new BitmapEntry(key, await factory());
         
-        BitmapStore.Instance.Add(entry);
+        BitmapStore.Instance.TryAdd(entry);
         
-        return new BitmapLease(entry);
+        return entry;
     }
     
     private async Task CleanupLoop(CancellationToken token)
     {
         while (!token.IsCancellationRequested)
         {
-            await Task.Delay(TimeSpan.FromSeconds(1), token);
+            await Task.Delay(TimeSpan.FromSeconds(5), token);
             
             foreach (var entry in BitmapStore.Instance.EnumerateFromOldest())
             {

@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using AsyncImageLoader.DevTools;
 using Avalonia.Logging;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -77,8 +78,8 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
     protected virtual async Task<Bitmap?> LoadAsync(string url) {
         var internalOrCachedBitmap =
             await LoadFromLocalAsync(url, null).ConfigureAwait(false)
-            ?? await LoadFromGlobalCache(url).ConfigureAwait(false)
-            ?? await LoadFromInternalAsync(url).ConfigureAwait(false);
+            ?? await LoadFromInternalAsync(url).ConfigureAwait(false)
+            ?? await LoadFromGlobalCache(url).ConfigureAwait(false);
         if (internalOrCachedBitmap != null) return internalOrCachedBitmap;
 
         try {
@@ -104,9 +105,8 @@ public class BaseWebImageLoader : IAsyncImageLoader, IAdvancedAsyncImageLoader {
     /// <param name="url">Url to load</param>
     /// <param name="storageProvider">Avalonia's storage provider</param>
     private async Task<Bitmap?> LoadFromLocalAsync(string url, IStorageProvider? storageProvider) {
-        if (File.Exists(url))
-            return new Bitmap(url);
-
+        if (File.Exists(url)) return new Bitmap(url);
+        
         if (storageProvider is null) return null;
         
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("file" or "content")) return null;

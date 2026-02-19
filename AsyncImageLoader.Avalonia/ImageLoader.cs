@@ -29,10 +29,8 @@ public static class ImageLoader {
     
     public static IAsyncImageLoader AsyncImageLoader { get; set; } = new RamCachedWebImageLoader();
     
-    public static TimeSpan DefaultImageLifetime { get; set; } = TimeSpan.FromSeconds(10);
-    
     public static BitmapCacheCoordinator BitmapCacheEvictionManager { get; set; } = 
-        new (new VisibilityTimeoutPolicy());
+        new (new VisibilityTimeoutPolicy(TimeSpan.FromSeconds(20)));
 
     private static readonly ConcurrentDictionary<Image, CancellationTokenSource> PendingOperations = new();
 
@@ -41,8 +39,9 @@ public static class ImageLoader {
         var url = args.GetNewValue<string?>();
 
         var cts = PendingOperations.AddOrUpdate(sender, new CancellationTokenSource(),
-            (_, y) => {
+            (x, y) => {
                 y.Cancel();
+                y.Dispose();
                 return new CancellationTokenSource();
             });
 
@@ -62,9 +61,16 @@ public static class ImageLoader {
 
         Bitmap? bitmap = null;
 
-        try
-        {
-            if (AsyncImageLoader is IAdvancedAsyncImageLoader advancedLoader)
+        try {
+            if (AsyncImageLoader is ICoordinatedImageLoader coordinatedImageLoader) {
+                var entry = await coordinatedImageLoader.CoordinatorProvideImageAsync(url);
+                
+                if(entry != null)
+                    entry.Acquire();
+                
+                bitmap = entry?.Bitmap;
+            }
+            else if (AsyncImageLoader is IAdvancedAsyncImageLoader advancedLoader)
                 bitmap = await advancedLoader.ProvideImageAsync(url, TopLevel.GetTopLevel(sender)?.StorageProvider);
             else
                 bitmap = await AsyncImageLoader.ProvideImageAsync(url);

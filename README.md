@@ -117,8 +117,6 @@ You can change the loader by assigning a new instance to [ImageLoader.AsyncImage
 * [RamCachedWebImageLoader](https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/blob/master/AsyncImageLoader.Avalonia/Loaders/RamCachedWebImageLoader.cs) – inherits `BaseWebImageLoader` and adds **in-memory caching**.
 * [DiskCachedWebImageLoader](https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/blob/master/AsyncImageLoader.Avalonia/Loaders/DiskCachedWebImageLoader.cs) – inherits `RamCachedWebImageLoader` and adds **disk caching** for downloaded images.
 
----
-
 ### **New Smart Loaders**
 
 * [SmartImageLoader](https://github.com/AvaloniaUtils/AsyncImageLoader.Avalonia/blob/master/AsyncImageLoader.Avalonia/Loaders/SmartImageLoader.cs) – inherits `BaseWebImageLoader` and implements **smart caching**:

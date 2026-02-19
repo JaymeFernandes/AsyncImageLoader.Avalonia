@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AsyncImageLoader.Memory.Services;
 
-namespace AsyncImageLoader;
+namespace AsyncImageLoader.DevTools;
 
 public class LoggingHandler : DelegatingHandler
 {

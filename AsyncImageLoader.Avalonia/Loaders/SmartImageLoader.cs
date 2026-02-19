@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Concurrent;
-using System.IO;
 using System.Net.Http;
-using System.Threading;
 using System.Threading.Tasks;
+using AsyncImageLoader.Memory.Services;
+using Avalonia.Platform.Storage;
 
 namespace AsyncImageLoader.Loaders;
 
@@ -36,18 +36,11 @@ public class SmartImageLoader : BaseWebImageLoader, ICoordinatedImageLoader
 
             response.EnsureSuccessStatusCode();
 
-            using var responseStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
-            using var ms = new MemoryStream();
-
-            var buffer = new byte[81920];
-            int read;
-            while ((read = await responseStream.ReadAsync(buffer, 0, buffer.Length)
-                       .ConfigureAwait(false)) > 0)
-            {
-                ms.Write(buffer, 0, read);
-            }
-
-            return ms.ToArray();
+            var bytes = await response.Content
+                .ReadAsByteArrayAsync()
+                .ConfigureAwait(false);
+            
+            return bytes;
         }
         catch (OperationCanceledException)
         {
@@ -62,4 +55,37 @@ public class SmartImageLoader : BaseWebImageLoader, ICoordinatedImageLoader
         }
     }
 
+    public async Task<BitmapEntry?> CoordinatorProvideImageAsync(string url) {
+        if (BitmapStore.Instance.TryGet(url, out var entry))
+            return entry;
+
+        var bitmap = await LoadAsync(url)
+            .ConfigureAwait(false);
+        
+        if(bitmap == null)
+            return null;
+        
+        entry = new BitmapEntry(url, bitmap);
+        
+        BitmapStore.Instance.TryAdd(entry);
+        
+        return entry;
+    }
+
+    public async Task<BitmapEntry?> CoordinatorProvideImageAsync(string url, IStorageProvider? storageProvider = null) {
+        if (BitmapStore.Instance.TryGet(url, out var entry))
+            return entry;
+
+        var bitmap = await LoadAsync(url, storageProvider)
+            .ConfigureAwait(false);
+        
+        if(bitmap == null)
+            return null;
+        
+        entry = new BitmapEntry(url, bitmap);
+        
+        BitmapStore.Instance.TryAdd(entry);
+        
+        return entry;
+    }
 }

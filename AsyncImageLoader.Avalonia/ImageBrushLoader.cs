@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using AsyncImageLoader.Loaders;
+using AsyncImageLoader.Memory.Services;
 using Avalonia;
 using Avalonia.Logging;
 using Avalonia.Media;
@@ -42,7 +43,16 @@ public static class ImageBrushLoader {
         {
             if (!string.IsNullOrWhiteSpace(newValue))
             {
-                bitmap = await AsyncImageLoader.ProvideImageAsync(newValue!);
+                if (BitmapStore.Instance.TryGet(newValue, out var entry))
+                    bitmap = entry.Bitmap;
+                else 
+                {
+                    bitmap = await AsyncImageLoader.ProvideImageAsync(newValue);
+                }
+            
+                if(AsyncImageLoader is ICoordinatedImageLoader)
+                    if (bitmap != null) 
+                        BitmapStore.Instance.TryAdd(new BitmapEntry(newValue, bitmap), true);
             }
         }
         catch (OperationCanceledException) { }

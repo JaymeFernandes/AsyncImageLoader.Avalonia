@@ -10,9 +10,6 @@ public class VisibilityTimeoutPolicy : IBitmapEvictionPolicy
     
     public  VisibilityTimeoutPolicy(TimeSpan timeout) 
         => _timeout = timeout;
-    
-    public VisibilityTimeoutPolicy() 
-        => _timeout = ImageLoader.DefaultImageLifetime;
 
     public bool ShouldEvict(BitmapEntry entry) {
         return entry.RefCount == 0 &&

@@ -14,6 +14,7 @@ public class App : Application {
 
     public override void OnFrameworkInitializationCompleted() {
         ImageLoader.AsyncImageLoader = new SmartImageLoader();
+        ImageBrushLoader.AsyncImageLoader = ImageLoader.AsyncImageLoader;
         
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop) {
             desktop.MainWindow = new MainWindow {
